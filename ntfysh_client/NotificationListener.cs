@@ -11,7 +11,6 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Web;
 
 namespace ntfysh_client
 {
@@ -110,7 +109,7 @@ namespace ntfysh_client
             if (string.IsNullOrWhiteSpace(username)) username = null;
             if (string.IsNullOrWhiteSpace(password)) password = null;
             
-            HttpRequestMessage message = new HttpRequestMessage(HttpMethod.Get, $"{serverUrl}/{HttpUtility.UrlEncode(topicId)}/json");
+            HttpRequestMessage message = new HttpRequestMessage(HttpMethod.Get, $"{serverUrl}/{WebUtility.UrlEncode(topicId)}/json");
 
             if (username != null && password != null)
             {
@@ -134,7 +133,7 @@ namespace ntfysh_client
             #endif
 
             //Topic isn't even subscribed, ignore
-            if (!SubscribedTopicsByUnique.TryGetValue(topicUniqueString, out SubscribedTopic topic)) return;
+            if (!SubscribedTopicsByUnique.TryGetValue(topicUniqueString, out SubscribedTopic? topic)) return;
             
             //Cancel and dispose the task runner
             topic.RunnerCanceller.Cancel();
