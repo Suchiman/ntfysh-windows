@@ -33,40 +33,40 @@ namespace ntfysh_client
         private async Task ListenToTopicAsync(HttpRequestMessage message, CancellationToken cancellationToken)
         {
             if (_isDisposed) throw new ObjectDisposedException(nameof(NotificationListener));
-            
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 using HttpResponseMessage response = await _httpClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 using Stream body = await response.Content.ReadAsStreamAsync();
-            
+
                 try
                 {
                     StringBuilder mainBuffer = new();
-                    
+
                     while (!cancellationToken.IsCancellationRequested)
                     {
                         //Read as much as possible
                         byte[] buffer = new byte[8192];
                         int readBytes = await body.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
-                        
+
                         //Append it to our main buffer
                         mainBuffer.Append(Encoding.UTF8.GetString(buffer, 0, readBytes));
-                        
+
                         List<string> lines = mainBuffer.ToString().Split('\n').ToList();
 
                         //If we have not yet received a full line, meaning theres only 1 part, go back to reading
                         if (lines.Count <= 1) continue;
-                        
+
                         //We now have at least 1 line! Count how many full lines. There will always be a partial line at the end, even if that partial line is empty
 
                         //Separate the partial line from the full lines
                         int partialLineIndex = lines.Count - 1;
                         string partialLine = lines[partialLineIndex];
                         lines.RemoveAt(partialLineIndex);
-                        
+
                         //Process the full lines
                         foreach (string line in lines) ProcessMessage(line);
-                        
+
                         //Write back the partial line
                         mainBuffer.Clear();
                         mainBuffer.Append(partialLine);
@@ -74,10 +74,10 @@ namespace ntfysh_client
                 }
                 catch (Exception ex)
                 {
-                    #if DEBUG
-                        Debug.WriteLine(ex);
-                    #endif
-                    
+#if DEBUG
+                    Debug.WriteLine(ex);
+#endif
+
                     //Fall back to the outer loop to restart the listen, or cancel if requested
                 }
             }
@@ -85,12 +85,12 @@ namespace ntfysh_client
 
         private void ProcessMessage(string message)
         {
-            #if DEBUG
-                Debug.WriteLine(message);
-            #endif
+#if DEBUG
+            Debug.WriteLine(message);
+#endif
 
             NtfyEvent? evt = JsonConvert.DeserializeObject<NtfyEvent>(message);
-                    
+
             //If we hit this, ntfy sent us an invalid message
             if (evt is null) return;
 
@@ -103,12 +103,12 @@ namespace ntfysh_client
         public void SubscribeToTopicUsingLongHttpJson(string unique, string topicId, string serverUrl, string? username, string? password)
         {
             if (_isDisposed) throw new ObjectDisposedException(nameof(NotificationListener));
-            
+
             if (SubscribedTopicsByUnique.ContainsKey(unique)) throw new InvalidOperationException("A topic with this unique already exists");
-            
+
             if (string.IsNullOrWhiteSpace(username)) username = null;
             if (string.IsNullOrWhiteSpace(password)) password = null;
-            
+
             HttpRequestMessage message = new HttpRequestMessage(HttpMethod.Get, $"{serverUrl}/{WebUtility.UrlEncode(topicId)}/json");
 
             if (username != null && password != null)
@@ -124,23 +124,27 @@ namespace ntfysh_client
             SubscribedTopicsByUnique.Add(unique, new SubscribedTopic(topicId, serverUrl, username, password, listenTask, listenCanceller));
         }
 
-        public void UnsubscribeFromTopic(string topicUniqueString)
+        public async Task UnsubscribeFromTopicAsync(string topicUniqueString)
         {
             if (_isDisposed) throw new ObjectDisposedException(nameof(NotificationListener));
-                
-            #if DEBUG
-                Debug.WriteLine($"Removing topic {topicUniqueString}");
-            #endif
+
+#if DEBUG
+            Debug.WriteLine($"Removing topic {topicUniqueString}");
+#endif
 
             //Topic isn't even subscribed, ignore
             if (!SubscribedTopicsByUnique.TryGetValue(topicUniqueString, out SubscribedTopic? topic)) return;
-            
+
             //Cancel and dispose the task runner
             topic.RunnerCanceller.Cancel();
 
             //Wait for the task runner to shut down
-            while (!topic.Runner.IsCompleted) Thread.Sleep(100);
-            
+            try
+            {
+                await topic.Runner;
+            }
+            catch (OperationCanceledException) { }
+
             //Dispose task
             topic.Runner.Dispose();
 
@@ -151,9 +155,9 @@ namespace ntfysh_client
         public void Dispose()
         {
             if (_isDisposed) return;
-            
+
             _httpClient.Dispose();
-            
+
             _isDisposed = true;
         }
     }
